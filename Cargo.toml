@@ -1,0 +1,22 @@
+[package]
+name = "rust-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4"
+env_logger = "0.10.1" # to see actix logs 
+tokio-postgres = "0.7.10"
+serde = {version = "1.0", features = ["derive"] }
+jsonwebtoken = "9"
+futures = "0.3"
+sqlx = {version="0.7", features = ["runtime-tokio", "postgres", "chrono"]}
+chrono = "0.4.31"
+actix-session = {version = "0.8", features = ["redis-actor-session"]}
+dotenvy = "0.15.7"
+
+
+[env]
+DATABASE_URL = { value = "postgresql://chat:password@localhost/chat" }
