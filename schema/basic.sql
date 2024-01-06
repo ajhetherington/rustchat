@@ -6,6 +6,7 @@ create table users (
     id serial primary key,
     username text unique not null,
     "password" varchar(255) not null,
+    salt text not null,
     display_name text not null,
     email text unique not null,
     created_at timestamptz default now(),
