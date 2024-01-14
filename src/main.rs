@@ -4,17 +4,17 @@ use actix_web::cookie::Key;
 use actix_web::{put, web, App, HttpRequest, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 // use futures::future::FutureExt;
+mod auth;
 mod custom_types;
 mod db;
-mod auth;
 mod login;
 mod server;
-use server::app_state::AppState;
-use custom_types::{GroupType};
-use db::setup_database;
 use auth::Authentication;
+use custom_types::GroupType;
+use db::setup_database;
 use login::login::{login_handle, register_handle};
-
+use server::app_state::AppState;
+use auth::AuthStruct;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MessageRequest {
@@ -22,12 +22,12 @@ struct MessageRequest {
     group_id: i32,
 }
 
+// should be authenticated
 #[put("/groups/{group_id}")]
 async fn some_thing(
     path: web::Path<u32>,
     app: web::Data<AppState>,
     thing: HttpRequest,
-    _: Authentication
 ) -> impl Responder {
     let group_id = path.into_inner();
     let user_id = thing
@@ -90,9 +90,18 @@ async fn main() -> std::io::Result<()> {
                 secret_key.clone(),
             ))
             .app_data(web::Data::new(AppState::new(&pool)))
-            .service(some_thing)
-            .service(login_handle)
-            .service(register_handle)
+            .service(
+                // these are not protected
+                web::scope("/auth")
+                    .service(login_handle)
+                    .service(register_handle),
+            )
+            .service(
+                // these are protected by the AuthStruct middleware
+                web::scope("/api")
+                .wrap(AuthStruct)
+                .service(some_thing),
+            )
     })
     .bind(("localhost", 8080))?
     .workers(4)

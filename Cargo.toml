@@ -20,6 +20,8 @@ actix-utils = "3.0.1"
 bcrypt = "0.15.0"
 argon2 = "0.5.2"
 rand = "0.8.5"
+futures-util = "0.3.30"
+log = "0.4.20"
 
 [env]
 DATABASE_URL = { value = "postgresql://chat:password@localhost/chat" }
