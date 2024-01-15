@@ -9,12 +9,15 @@ mod custom_types;
 mod db;
 mod login;
 mod server;
+mod groups;
+mod extractors;
 use auth::Authentication;
 use custom_types::GroupType;
 use db::setup_database;
 use login::login::{login_handle, register_handle};
 use server::app_state::AppState;
 use auth::AuthStruct;
+use groups::groups::write_to_group;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MessageRequest {
@@ -100,6 +103,7 @@ async fn main() -> std::io::Result<()> {
                 // these are protected by the AuthStruct middleware
                 web::scope("/api")
                 .wrap(AuthStruct)
+                .service(write_to_group)
                 .service(some_thing),
             )
     })

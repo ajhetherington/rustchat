@@ -9,7 +9,6 @@ use chrono::Local;
 use futures_util::{future::LocalBoxFuture, FutureExt, TryFutureExt};
 use log;
 use serde::{Deserialize, Serialize};
-use std::borrow::{self, Borrow, BorrowMut};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Authentication {
@@ -50,7 +49,7 @@ where
     S::Future: 'static,
     B: 'static,
 {
-    // using EitherBody allows for an 
+    // using EitherBody allows for an
     // early return from unauthorized requests
     type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
