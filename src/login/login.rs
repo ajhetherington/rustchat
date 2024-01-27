@@ -1,4 +1,4 @@
-use crate::server::app_state::AppState;
+use crate::{auth::TokenStore, server::app_state::AppState};
 use actix_web::{
     error, get, http::StatusCode, post, put, web, HttpRequest, HttpResponse, Responder,
 };
@@ -8,8 +8,6 @@ use argon2::{
     },
     Argon2,
 };
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -25,10 +23,17 @@ fn resp(message: &str, status: Option<StatusCode>) -> HttpResponse {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct LoginResponse {
+    user_id: i32,
+    token: String,
+}
+
 #[post("/login")]
 pub async fn login_handle(
     app: web::Data<AppState>,
     somereq: web::Json<LoginRequest>,
+    tokenstore: web::Data<TokenStore>,
 ) -> HttpResponse {
     let (user_id, password) = match sqlx::query!(
         r#"select id, password from users where username=$1"#,
@@ -40,36 +45,31 @@ pub async fn login_handle(
         Ok(ret) => (ret.id, ret.password),
         Err(_e) => return resp("user not found", None),
     };
+
     match check_password(&somereq.password, &password) {
-        true => return resp(generate_token().as_str(), Some(StatusCode::OK)),
+        true => {
+            let token = tokenstore.validate_user(user_id);
+            HttpResponse::build(StatusCode::OK).json(LoginResponse { token, user_id })
+        }
         false => return resp("password doesn't match", Some(StatusCode::UNAUTHORIZED)),
     }
-}
-
-fn generate_token() -> String {
-    let mut rng = thread_rng();
-    let s: String = (&mut rng)
-        .sample_iter(Alphanumeric)
-        .take(7)
-        .map(char::from)
-        .collect();
-    // need to whack this into redis
-    s
 }
 
 // Register
 #[derive(Serialize, Deserialize, Debug)]
 struct RegisterRequest {
-    username: String,
-    email: String,
+    username: Option<String>,
+    email: Option<String>,
     password: String,
 }
 
 async fn check_user_duplicate(
     pool: &sqlx::Pool<sqlx::Postgres>,
-    email: &String,
-    username: &String,
+    email: Option<String>,
+    username: Option<String>,
 ) -> Result<i32, HttpResponse> {
+    
+    // interesting that it works for Option<String>
     let value = sqlx::query!(
         r#"select 1 as "exists" from users where email = $1 or username = $2"#,
         email,
@@ -87,7 +87,7 @@ async fn check_user_duplicate(
     };
     match unpacked {
         Some(_val) => Err(HttpResponse::build(StatusCode::CONFLICT)
-            .json("found user with that email or username")),
+            .json("already found user with that email or username")),
         _ => Ok(1),
     }
 }
@@ -144,16 +144,35 @@ async fn insert_user(
 pub async fn register_handle(
     app: web::Data<AppState>,
     data: web::Json<RegisterRequest>,
+    tokenstore: web::Data<TokenStore>,
 ) -> HttpResponse {
     // first check that username / email is not already entered
-    match check_user_duplicate(&app.pool, &data.email, &data.username).await {
+    match check_user_duplicate(&app.pool, data.email.clone(), data.username.clone()).await {
         Err(val) => return val,
         _ => {}
     }
-    match insert_user(&app.pool, data).await {
-        Ok(id) => println!("{:?} was id", id),
+
+    let user_id = match insert_user(&app.pool, data).await {
+        Ok(id) => id,
         Err(val) => return val,
     };
 
-    HttpResponse::Ok().json("cool")
+    let token = tokenstore.validate_user(user_id);
+    HttpResponse::Ok().json(LoginResponse { token, user_id })
+}
+
+#[put("/logout")]
+pub async fn logout_handle(tokenstore: web::Data<TokenStore>, req: HttpRequest) -> HttpResponse {
+    // by being here, the user should already be logged in & verified
+    // so just need to remove the user from the mutex
+    let user_id = req
+        .headers()
+        .get("user_id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    tokenstore.invalidate_user(user_id);
+    HttpResponse::Ok().json(format!("logged out user {user_id}"))
 }

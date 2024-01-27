@@ -41,7 +41,7 @@ async fn get_group_members(group_id: i32, pool: &Pool<Postgres>) -> impl Respond
         _ => return HttpResponse::InternalServerError()
     };
     
-    let mut resp = HttpResponse::Ok();
+    let resp = HttpResponse::Ok();
     resp
 }
 
