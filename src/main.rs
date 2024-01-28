@@ -14,7 +14,7 @@ mod server;
 use auth::AuthStruct;
 use custom_types::GroupType;
 use db::setup_database;
-use groups::groups::write_to_group;
+use groups::group_routes;
 use login::login::{login_handle, logout_handle, register_handle};
 use server::app_state::AppState;
 
@@ -51,16 +51,16 @@ async fn main() -> std::io::Result<()> {
                 // these are not protected
                 web::scope("/auth")
                     .service(login_handle)
-                    .service(register_handle)
+                    .service(register_handle),
             )
             .service(
                 web::scope("/noauth")
-                .wrap(AuthStruct)
-                .service(logout_handle)
+                    .wrap(AuthStruct)
+                    .service(logout_handle),
             )
             .service(
                 // these are protected by the AuthStruct middleware
-                web::scope("/api").wrap(AuthStruct).service(write_to_group),
+                web::scope("/api").wrap(AuthStruct).configure(group_routes),
             )
     })
     .bind(("localhost", 8080))?

@@ -13,6 +13,7 @@ impl FromRequest for User {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
+        // todo: check this is the correct user id
         let user_id = req.headers().get("user_id").unwrap();
 
         let str_user_id = match user_id.to_str() {
