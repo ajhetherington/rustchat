@@ -15,4 +15,5 @@ pub enum GroupType {
     CHANNEL,
     ROOM,
     TEAM,
+    DM,
 }
