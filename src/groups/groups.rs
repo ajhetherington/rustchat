@@ -65,7 +65,7 @@ impl FromRequest for VecAllGroups {
 }
 
 #[get("/")]
-async fn get_groups(groups: VecAllGroups) -> HttpResponse {
+async fn handle_get_groups(groups: VecAllGroups) -> HttpResponse {
     let ret: Vec<AllGroups> = groups.rows.into_iter().filter(|val| val.read).collect();
     HttpResponse::Ok().json(ret)
 }
@@ -82,43 +82,51 @@ struct CreateGroupResponse {
     group_id: i32,
 }
 
-
 async fn create_group(
     app: web::Data<AppState>,
     group_req: web::Json<CreateGroupRequest>,
     user: User,
 ) -> HttpResponse {
     // let mut tran = app.pool.begin().await.unwrap();
-    let con = app.pool.acquire().await.unwrap();
-    let mut comit = con.begin();
+    // let mut con = app.pool.acquire().await.unwrap();
 
     let this = sqlx::query!(
         r#"insert into groups(group_name, parent_group_id, type)
         values ( $1, $2, $3 ) returning id"#,
-            group_req.group_name,
-            group_req.parent_group_id,
-            group_req.group_type as GroupType
-    ).statement().unwrap();
-    let row = con.execute(this.query()).await.unwrap();
+        group_req.group_name,
+        group_req.parent_group_id,
+        group_req.group_type as GroupType
+    )
+    .fetch(&app.pool);
+    // let row = con.execute(this.query()).await.unwrap();
     let row = sqlx::query!(
         r#"insert into groups(group_name, parent_group_id, type)
     values ( $1, $2, $3 ) returning id"#,
         group_req.group_name,
         group_req.parent_group_id,
         group_req.group_type as GroupType
-    ).fetch_one(comit).await.unwrap();
-    sqlx::query!(
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    let result = sqlx::query!(
         r"insert into group_permissions (user_id, group_id,
         read, write, moderate, admin)
         values (
             $1, $2, $3, $4, $5, $6
         )
-         ", user.user_id, row.id, true, true, true, false
-    ).execute(tran).await;
+        returning id
+         ",
+        user.user_id,
+        row.id,
+        true,
+        true,
+        true,
+        false
+    )
+    .fetch_one(&app.pool).await;
 
-
-    HttpResponse::Ok().json(CreateGroupResponse{group_id: row.id})
-
+    HttpResponse::Ok().json(CreateGroupResponse { group_id: row.id })
 }
 
 #[get("{group_id}/members")]

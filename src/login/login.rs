@@ -2,6 +2,7 @@ use crate::{auth::TokenStore, server::app_state::AppState};
 use actix_web::{
     error, get, http::StatusCode, post, put, web, HttpRequest, HttpResponse, Responder,
 };
+use std::sync::Arc;
 use argon2::{
     password_hash::{
         rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, Salt, SaltString,
@@ -32,12 +33,13 @@ struct LoginResponse {
 #[post("/login")]
 pub async fn login_handle(
     app: web::Data<AppState>,
-    somereq: web::Json<LoginRequest>,
-    tokenstore: web::Data<TokenStore>,
+    tokenstore: web::Data<Arc<TokenStore>>,
+    form_data: web::Form<LoginRequest>
 ) -> HttpResponse {
+    println!("{:?}",tokenstore);
     let (user_id, password) = match sqlx::query!(
         r#"select id, password from users where username=$1"#,
-        somereq.username
+        form_data.username
     )
     .fetch_one(&app.pool)
     .await
@@ -46,7 +48,7 @@ pub async fn login_handle(
         Err(_e) => return resp("user not found", None),
     };
 
-    match check_password(&somereq.password, &password) {
+    match check_password(&form_data.password, &password) {
         true => {
             let token = tokenstore.validate_user(user_id);
             HttpResponse::build(StatusCode::OK).json(LoginResponse { token, user_id })
@@ -107,7 +109,7 @@ fn check_password(plaintext: &String, ciphertext: &String) -> bool {
 
 async fn insert_user(
     pool: &sqlx::Pool<sqlx::Postgres>,
-    data: web::Json<RegisterRequest>,
+    data: web::Form<RegisterRequest>,
 ) -> Result<i32, HttpResponse> {
     let plaintext = data.password.as_bytes();
     // let salt = SaltString::generate(&mut OsRng).as_str().as_bytes();
@@ -143,16 +145,17 @@ async fn insert_user(
 #[post("/register")]
 pub async fn register_handle(
     app: web::Data<AppState>,
-    data: web::Json<RegisterRequest>,
-    tokenstore: web::Data<TokenStore>,
+    tokenstore: web::Data<Arc<TokenStore>>,
+    // data: web::Json<RegisterRequest>,
+    form_data: web::Form<RegisterRequest>,
 ) -> HttpResponse {
     // first check that username / email is not already entered
-    match check_user_duplicate(&app.pool, data.email.clone(), data.username.clone()).await {
+    match check_user_duplicate(&app.pool, form_data.email.clone(), form_data.username.clone()).await {
         Err(val) => return val,
         _ => {}
     }
 
-    let user_id = match insert_user(&app.pool, data).await {
+    let user_id = match insert_user(&app.pool, form_data).await {
         Ok(id) => id,
         Err(val) => return val,
     };
@@ -162,17 +165,17 @@ pub async fn register_handle(
 }
 
 #[put("/logout")]
-pub async fn logout_handle(tokenstore: web::Data<TokenStore>, req: HttpRequest) -> HttpResponse {
+pub async fn logout_handle(tokenstore: web::Data<Arc<TokenStore>>, req: HttpRequest) -> HttpResponse {
     // by being here, the user should already be logged in & verified
     // so just need to remove the user from the mutex
-    let user_id = req
+    let token = req
         .headers()
-        .get("user_id")
+        .get("Authorization")
         .unwrap()
         .to_str()
-        .unwrap()
-        .parse::<i32>()
         .unwrap();
-    tokenstore.invalidate_user(user_id);
+        // .parse::<String>()
+        // .unwrap();
+    let user_id = tokenstore.invalidate_token(token.to_owned());
     HttpResponse::Ok().json(format!("logged out user {user_id}"))
 }

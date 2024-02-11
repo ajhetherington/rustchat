@@ -1,55 +1,78 @@
-use std::rc::Rc;
-
 use actix_utils::future::{err, ok, ready, Ready};
 use actix_web::body::EitherBody;
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::web::Data;
 use actix_web::HttpResponse;
 use actix_web::{error::ErrorUnauthorized, Error, FromRequest};
-use futures_util::{future::LocalBoxFuture, FutureExt, TryFutureExt};
+use chrono::prelude::*;
+use futures_util::future::LocalBoxFuture;
 use log;
-use serde::{Deserialize, Serialize};
-use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use std::collections::HashMap;
-use bimap::BiMap;
 use std::sync::Mutex;
 
+#[derive(Debug)]
+struct UserLoginValues {
+    user_id: i32,
+    login_time: DateTime<Utc>,
+    expiry_time: DateTime<Utc>,
+}
+
+#[derive(Debug)]
 pub struct TokenStore {
-    tokens: Mutex<BiMap<String, i32>>, // Token as key, User ID as value
+    tokens: Mutex<HashMap<String, UserLoginValues>>, // Token as key, User ID as value
 }
 
 impl TokenStore {
     pub fn new() -> Self {
         TokenStore {
-            tokens: Mutex::new(BiMap::new()),
+            tokens: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn get_token(&self, user_id: i32) -> Option<String> {
-        let tokens = self.tokens.lock().unwrap();
-        match tokens.get_by_right(&user_id) {
-            Some(val) => Some((*val).clone()),
-            _ => None
+    pub fn check_expiry(&self) {
+        let mut values = self.tokens.lock().unwrap();
+        let now = Utc::now();
+        let expired_tokens: Vec<String> = values
+            .iter()
+            .filter(|val| val.1.expiry_time < now)
+            .map(|val| val.0.to_string())
+            .collect();
+        println!("{:?} tokens to expire", expired_tokens.len());
+        for token in expired_tokens {
+            values.remove(&token);
         }
     }
 
-    pub fn validate_user(&self, user_id: i32) -> String { 
+    pub fn validate_user(&self, user_id: i32) -> String {
         let mut tokens = self.tokens.lock().unwrap();
         let token = generate_token();
-        tokens.insert(token.clone(), user_id);
+        tokens.insert(
+            token.clone(),
+            UserLoginValues {
+                user_id,
+                login_time: Utc::now(),
+                expiry_time: Utc::now() + chrono::Duration::seconds(30),
+            },
+        );
         token
     }
 
-    pub fn invalidate_user(&self, user_id: i32) {
+    pub fn invalidate_token(&self, token: String) -> i32 {
         let mut tokens = self.tokens.lock().unwrap();
-        tokens.remove_by_right(&user_id);
+        tokens.remove(&token).unwrap().user_id
     }
 
     fn check_token(&self, token: &str) -> Option<i32> {
         let tokens = self.tokens.lock().unwrap();
-        tokens.get_by_left(token).cloned()
+        match tokens.get(token) {
+            Some(login) => Some(login.user_id),
+            _ => None,
+        }
     }
 }
 
@@ -62,7 +85,6 @@ fn generate_token() -> String {
         .collect();
     s
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Authentication {
@@ -78,7 +100,7 @@ impl FromRequest for Authentication {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        let token_store = req.app_data::<Data<TokenStore>>().unwrap();
+        let token_store = req.app_data::<Data<Arc<TokenStore>>>().unwrap();
         let headers = req.headers();
         let header_user_id = match headers.get("user_id") {
             Some(header) => header.to_str().unwrap(),
@@ -90,14 +112,20 @@ impl FromRequest for Authentication {
             Some(header) => {
                 let header_auth_token = header.to_str().unwrap();
                 let cached_user_id = (*token_store).check_token(header_auth_token);
-                if cached_user_id.is_some() {
-                    if header_user_id.parse::<i32>().unwrap() == cached_user_id.unwrap() {
-                        return ok(Authentication {
-                            token: header_auth_token.to_owned(),
-                        });
+                match cached_user_id {
+                    Some(id) => {
+                        if header_user_id.parse::<i32>().unwrap() == id {
+                            return ok(Authentication {
+                                token: header_auth_token.to_owned(),
+                            });
+                        } else {
+                            // here don't be specific in error as that would give away
+                            // that the token is valid but user_id invalid
+                            return err(ErrorUnauthorized("Token invalid"));
+                        }
                     }
+                    None => return err(ErrorUnauthorized("Token invalid")),
                 }
-                return err(ErrorUnauthorized("Token invalid"));
             }
             _ => err(ErrorUnauthorized(
                 "not authorized, no token found in Authorization",
@@ -153,10 +181,9 @@ where
     fn call(&self, mut req: ServiceRequest) -> Self::Future {
         let b = futures::executor::block_on(req.extract::<Authentication>());
         match b {
-            Ok(T) => println!("ok"),
-            Err(T) => {
-                log::info!("hope i see this");
-                println!("Catching in middleware");
+            Ok(_) => {}
+            Err(t) => {
+                log::error!("Authentication error: {t}");
                 return Box::pin(async {
                     Ok(req
                         .into_response(HttpResponse::Unauthorized())

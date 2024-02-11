@@ -1,9 +1,15 @@
+use core::time;
+use std::default;
+
 use actix_session::storage::RedisActorSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
-use actix_web::{put, web, App, HttpRequest, HttpServer, Responder};
+use actix_web::middleware;
+use actix_web::{get, put, web, App, HttpRequest, HttpServer, Responder};
+use std::thread::{self, sleep};
 use serde::{Deserialize, Serialize};
 // use futures::future::FutureExt;
+use std::sync::{Arc, Mutex};
 mod auth;
 mod custom_types;
 mod db;
@@ -37,15 +43,26 @@ async fn main() -> std::io::Result<()> {
     println!("number idle {:?}", b);
     let redis_connection_string = "localhost:6379";
     let secret_key = Key::generate();
-    let token_storage = web::Data::new(TokenStore::new());
+    let token_store = Arc::new(TokenStore::new());
+
+    let thread_token_store = Arc::clone(&token_store);
+    thread::spawn(move || {
+        loop {
+            println!("checking expiry for thingy");
+            thread_token_store.check_expiry();
+            sleep(time::Duration::from_secs(60));
+        }
+    });
+    let token_storage = web::Data::new(token_store);
+
 
     let server = HttpServer::new(move || {
         App::new()
-            .app_data(token_storage.clone())
             .wrap(SessionMiddleware::new(
                 RedisActorSessionStore::new(redis_connection_string),
                 secret_key.clone(),
             ))
+            .app_data(token_storage.clone())
             .app_data(web::Data::new(AppState::new(&pool)))
             .service(
                 // these are not protected
