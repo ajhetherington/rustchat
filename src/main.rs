@@ -48,7 +48,7 @@ async fn main() -> std::io::Result<()> {
     let thread_token_store = Arc::clone(&token_store);
     thread::spawn(move || {
         loop {
-            println!("checking expiry for thingy");
+            println!("checking expiry");
             thread_token_store.check_expiry();
             sleep(time::Duration::from_secs(60));
         }
