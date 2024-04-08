@@ -1,5 +1,5 @@
-use actix_utils::future::{err, ok, ready, Ready};
-use actix_web::{error, Error, FromRequest, HttpResponse};
+use actix_utils::future::{err, ok, Ready};
+use actix_web::{error, Error, FromRequest};
 
 pub struct User {
     pub user_id: i32,

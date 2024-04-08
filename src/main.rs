@@ -1,13 +1,16 @@
 use core::time;
 use std::default;
+use std::{process, thread};
 
 use actix_session::storage::RedisActorSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
 use actix_web::middleware;
 use actix_web::{get, put, web, App, HttpRequest, HttpServer, Responder};
-use std::thread::{self, sleep};
+use log::logger;
+use std::thread::sleep;
 use serde::{Deserialize, Serialize};
+use tokio;
 // use futures::future::FutureExt;
 use std::sync::{Arc, Mutex};
 mod auth;
@@ -38,6 +41,7 @@ async fn main() -> std::io::Result<()> {
 
     // std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
+    log::info!("process id is {}", process::id());
     let pool = setup_database().await.unwrap();
     let b = pool.num_idle();
     println!("number idle {:?}", b);
@@ -46,11 +50,13 @@ async fn main() -> std::io::Result<()> {
     let token_store = Arc::new(TokenStore::new());
 
     let thread_token_store = Arc::clone(&token_store);
-    thread::spawn(move || {
+    // spawns a thread that checks expiry every 60 seconds
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
         loop {
-            println!("checking expiry");
+            interval.tick().await;
+            log::info!("checking expiry, process_id is {}", process::id());
             thread_token_store.check_expiry();
-            sleep(time::Duration::from_secs(60));
         }
     });
     let token_storage = web::Data::new(token_store);

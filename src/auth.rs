@@ -201,3 +201,57 @@ where
         })
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn can_create_token() {
+        let a = generate_token();
+        assert!(a.len() > 0);
+
+    }
+    #[test]
+    fn tokens_are_different() {
+        let a = generate_token();
+        let b = generate_token();
+        let c = generate_token(); 
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn create_token_store() {
+        let user_id = 2;
+        let token_store = TokenStore::new();
+        let user_token = token_store.validate_user(user_id);
+        assert_eq!(token_store.check_token(&user_token).unwrap(), user_id);
+    }
+
+    #[test]
+    fn user_token_no_crossover() {
+        let user_id_1 = 1;
+        let user_id_2 = 2;
+        let token_store = TokenStore::new();
+        let user_token_1 = token_store.validate_user(user_id_1);
+        let user_token_2 = token_store.validate_user(user_id_2);
+
+        assert_ne!(token_store.check_token(&user_token_1).unwrap(), user_id_2);
+        assert_ne!(token_store.check_token(&user_token_2).unwrap(), user_id_1);
+        assert_eq!(token_store.check_token(&user_token_1).unwrap(), user_id_1);
+        assert_eq!(token_store.check_token(&user_token_2).unwrap(), user_id_2);
+    }
+
+    #[test]
+    fn invalidate_token() {
+        let token_store = TokenStore::new();
+        let user_token = token_store.validate_user(2);
+
+        assert!(token_store.check_token("badToken").is_none());
+        token_store.invalidate_token(user_token.clone());
+        assert!(token_store.check_token(&user_token).is_none());
+        
+    }
+}

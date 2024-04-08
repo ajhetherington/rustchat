@@ -77,6 +77,22 @@ struct CreateGroupRequest {
     group_type: GroupType,
 }
 
+#[post("/create")]
+async fn handle_create_group(
+    app: web::Data<AppState>,
+    group_req: web::Json<CreateGroupRequest>,
+    user: User,
+) -> HttpResponse {
+    create_group(
+        app,
+        &group_req.group_name,
+        group_req.group_type,
+        group_req.parent_group_id,
+        user,
+    )
+    .await
+}
+
 #[derive(Serialize, Deserialize)]
 struct CreateGroupResponse {
     group_id: i32,
@@ -84,7 +100,9 @@ struct CreateGroupResponse {
 
 async fn create_group(
     app: web::Data<AppState>,
-    group_req: web::Json<CreateGroupRequest>,
+    group_name: &String,
+    group_type: GroupType,
+    parent_group_id: Option<i32>,
     user: User,
 ) -> HttpResponse {
     // let mut tran = app.pool.begin().await.unwrap();
@@ -93,18 +111,18 @@ async fn create_group(
     let this = sqlx::query!(
         r#"insert into groups(group_name, parent_group_id, type)
         values ( $1, $2, $3 ) returning id"#,
-        group_req.group_name,
-        group_req.parent_group_id,
-        group_req.group_type as GroupType
+        group_name,
+        parent_group_id,
+        group_type as GroupType
     )
     .fetch(&app.pool);
     // let row = con.execute(this.query()).await.unwrap();
     let row = sqlx::query!(
         r#"insert into groups(group_name, parent_group_id, type)
     values ( $1, $2, $3 ) returning id"#,
-        group_req.group_name,
-        group_req.parent_group_id,
-        group_req.group_type as GroupType
+        group_name,
+        parent_group_id,
+        group_type as GroupType
     )
     .fetch_one(&app.pool)
     .await
@@ -124,7 +142,8 @@ async fn create_group(
         true,
         false
     )
-    .fetch_one(&app.pool).await;
+    .fetch_one(&app.pool)
+    .await;
 
     HttpResponse::Ok().json(CreateGroupResponse { group_id: row.id })
 }
