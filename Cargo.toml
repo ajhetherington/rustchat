@@ -12,7 +12,7 @@ tokio-postgres = "0.7.10"
 serde = {version = "1.0", features = ["derive"] }
 futures = "0.3"
 sqlx = {version="0.7", features = ["runtime-tokio", "postgres", "chrono"]}
-chrono = "0.4.31"
+chrono = {version="0.4.31", features=["serde"]}
 actix-session = {version = "0.8", features = ["redis-actor-session"]}
 tokio = "1.31"
 dotenvy = "0.15.7"
@@ -25,6 +25,9 @@ log = "0.4.20"
 serde_json = "1.0.111"
 bimap = "0.6.3"
 actix-web-lab = "0.20.2"
+actix-web-actors = "4.3.0"
+actix = "0.13.3"
+uuid = "1.8.0"
 
 [env]
 DATABASE_URL = { value = "postgresql://chat:password@localhost/chat" }

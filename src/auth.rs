@@ -56,7 +56,7 @@ impl TokenStore {
             UserLoginValues {
                 user_id,
                 login_time: Utc::now(),
-                expiry_time: Utc::now() + chrono::Duration::seconds(30),
+                expiry_time: Utc::now() + chrono::Duration::minutes(10),
             },
         );
         token
@@ -121,10 +121,10 @@ impl FromRequest for Authentication {
                         } else {
                             // here don't be specific in error as that would give away
                             // that the token is valid but user_id invalid
-                            return err(ErrorUnauthorized("Token invalid"));
+                            return err(ErrorUnauthorized(format!("Token invalid {}", header_auth_token)));
                         }
                     }
-                    None => return err(ErrorUnauthorized("Token invalid")),
+                    None => return err(ErrorUnauthorized(format!("Token invalid {}", header_auth_token))),
                 }
             }
             _ => err(ErrorUnauthorized(

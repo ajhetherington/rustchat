@@ -1,15 +1,10 @@
-use core::time;
-use std::default;
-use std::{process, thread};
-
 use actix_session::storage::RedisActorSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
 use actix_web::middleware;
 use actix_web::{get, put, web, App, HttpRequest, HttpServer, Responder};
-use log::logger;
-use std::thread::sleep;
 use serde::{Deserialize, Serialize};
+use std::process;
 use tokio;
 // use futures::future::FutureExt;
 use std::sync::{Arc, Mutex};
@@ -19,15 +14,16 @@ mod db;
 mod extractors;
 mod groups;
 mod login;
+mod messages;
 mod server;
+use crate::auth::TokenStore;
 use auth::AuthStruct;
 use custom_types::GroupType;
 use db::setup_database;
 use groups::group_routes;
 use login::login::{login_handle, logout_handle, register_handle};
+use messages::message_routes;
 use server::app_state::AppState;
-
-use crate::auth::TokenStore;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MessageRequest {
@@ -61,9 +57,9 @@ async fn main() -> std::io::Result<()> {
     });
     let token_storage = web::Data::new(token_store);
 
-
     let server = HttpServer::new(move || {
         App::new()
+            .wrap(middleware::NormalizePath::trim())
             .wrap(SessionMiddleware::new(
                 RedisActorSessionStore::new(redis_connection_string),
                 secret_key.clone(),
@@ -77,13 +73,15 @@ async fn main() -> std::io::Result<()> {
                     .service(register_handle),
             )
             .service(
-                web::scope("/noauth")
-                    .wrap(AuthStruct)
-                    .service(logout_handle),
+                // protected
+                web::scope("/auth").wrap(AuthStruct).service(logout_handle),
             )
             .service(
                 // these are protected by the AuthStruct middleware
-                web::scope("/api").wrap(AuthStruct).configure(group_routes),
+                web::scope("/api")
+                    .wrap(AuthStruct)
+                    .configure(group_routes)
+                    .configure(message_routes),
             )
     })
     .bind(("localhost", 8080))?
